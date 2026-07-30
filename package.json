@@ -34,10 +34,18 @@
     "build:penTopper": "pnpm --filter pen-topper build",
     "dev:foldbox": "pnpm --filter foldbox dev:print",
     "build:foldbox": "pnpm --filter foldbox build",
-    "render:topper": "node scripts/render-topper.mjs"
+    "render:topper": "node scripts/render-topper.mjs",
+    "build:site": "node scripts/build-site.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.2",
     "fflate": "^0.8.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@fortawesome/fontawesome-free",
+      "esbuild",
+      "sharp"
+    ]
   }
 }
