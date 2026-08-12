@@ -27,4 +27,7 @@ run('pnpm build:keycap');
 copy('apps/keycap-generator/dist', 'apps/hub/dist/SVG-keycap-generator');
 copy('apps/keycap-generator/dist', 'apps/hub/dist/keycap');
 
+run('pnpm build:magnet');
+copy('apps/magnet-generator/dist', 'apps/hub/dist/magnet');
+
 console.log('\n✓ Assembled site → apps/hub/dist');
