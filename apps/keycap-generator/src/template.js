@@ -80,7 +80,7 @@ export const TEMPLATE = `
              otherwise), sitting next to Depth as its raised-legend counterpart. -->
         <div class="prow">
           <label for="embossHeight">Emboss height</label>
-          <input id="embossHeight" type="range" min="0.2" max="3" step="0.05" value="1" />
+          <input id="embossHeight" type="range" min="0.2" max="3" step="0.05" value="0.4" />
           <input id="embossHeightNum" type="number" step="0.05" />
           <span class="unit">mm</span>
         </div>

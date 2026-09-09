@@ -562,7 +562,7 @@ export function mount(container, host) {
   // Stock values for the per-section reset buttons. `size` is replaced at boot
   // once we know the sensible default for this cap's geometry.
   const DEFAULTS = {
-    size: 8, depth: 0.5, embossHeight: 1, rot: 0, offx: 0, offy: 0, stemTol: 0,
+    size: 8, depth: 0.5, embossHeight: 0.4, rot: 0, offx: 0, offy: 0, stemTol: 0,
     mirror: false, through: false, single: false, emboss: false, homingBump: false,
     capColor: '#1c1c1e', logoColor: '#f2f2f2',
   };
