@@ -485,6 +485,7 @@ export function mount(container, host) {
   const C = {
     size: link('size', 'sizeNum', scheduleRegen),
     depth: link('depth', 'depthNum', scheduleRegen),
+    embossHeight: link('embossHeight', 'embossHeightNum', scheduleRegen),
     rot: link('rot', 'rotNum', scheduleRegen),
     offx: link('offx', 'offxNum', scheduleRegen),
     offy: link('offy', 'offyNum', scheduleRegen),
@@ -539,13 +540,19 @@ export function mount(container, host) {
   $('mirror').addEventListener('change', scheduleRegen);
   $('homingBump').addEventListener('change', scheduleRegen);
   // Shine-through and single-colour are mutually exclusive: one prints the legend in a second
-  // (transparent) filament, the other engraves it in the single cap filament.
+  // (transparent) filament, the other engraves it in the single cap filament. Emboss raises the
+  // legend instead of carving it, so it is mutually exclusive with shine-through (which carves
+  // all the way through); it stays compatible with single-colour (a raised tactile bump).
   $('through').addEventListener('change', () => {
-    if ($('through').checked) $('single').checked = false;
+    if ($('through').checked) { $('single').checked = false; $('emboss').checked = false; }
     applyModeFlags(); scheduleRegen();
   });
   $('single').addEventListener('change', () => {
     if ($('single').checked) $('through').checked = false;
+    applyModeFlags(); scheduleRegen();
+  });
+  $('emboss').addEventListener('change', () => {
+    if ($('emboss').checked) $('through').checked = false;
     applyModeFlags(); scheduleRegen();
   });
   $('capColor').addEventListener('input', () => { capMat.color.set($('capColor').value); });
@@ -555,17 +562,23 @@ export function mount(container, host) {
   // Stock values for the per-section reset buttons. `size` is replaced at boot
   // once we know the sensible default for this cap's geometry.
   const DEFAULTS = {
-    size: 8, depth: 0.5, rot: 0, offx: 0, offy: 0, stemTol: 0,
-    mirror: false, through: false, single: false, homingBump: false,
+    size: 8, depth: 0.5, embossHeight: 1, rot: 0, offx: 0, offy: 0, stemTol: 0,
+    mirror: false, through: false, single: false, emboss: false, homingBump: false,
     capColor: '#1c1c1e', logoColor: '#f2f2f2',
   };
 
-  // Reflect the current shine-through / single-colour state on dependent inputs.
-  // Shine-through prints the legend through the wall, so depth no longer applies.
-  // Single-colour engraves the legend in the cap filament, so the legend colour is moot.
+  // Reflect the current shine-through / single-colour / emboss state on dependent inputs.
+  // Shine-through prints the legend through the wall and emboss raises it, so in both cases the
+  // deboss Depth no longer applies; Emboss height applies only when embossing. Single-colour
+  // engraves (or raises, when embossing) the legend in the cap filament, so the legend colour is
+  // moot there.
   function applyModeFlags() {
-    $('depth').disabled = $('through').checked;
-    $('depthNum').disabled = $('through').checked;
+    const emboss = $('emboss').checked;
+    const noDepth = $('through').checked || emboss;
+    $('depth').disabled = noDepth;
+    $('depthNum').disabled = noDepth;
+    $('embossHeight').disabled = !emboss;
+    $('embossHeightNum').disabled = !emboss;
     $('logoColor').disabled = $('single').checked;
     updateStemMaterial();
   }
@@ -585,6 +598,7 @@ export function mount(container, host) {
   function resetPlacement() {
     C.size.set(DEFAULTS.size);
     C.depth.set(DEFAULTS.depth);
+    C.embossHeight.set(DEFAULTS.embossHeight);
     C.rot.set(DEFAULTS.rot);
     C.offx.set(DEFAULTS.offx);
     C.offy.set(DEFAULTS.offy);
@@ -593,10 +607,11 @@ export function mount(container, host) {
     $('mirror').checked = DEFAULTS.mirror;
     $('through').checked = DEFAULTS.through;
     $('single').checked = DEFAULTS.single;
+    $('emboss').checked = DEFAULTS.emboss;
     $('homingBump').checked = DEFAULTS.homingBump;
     applyModeFlags();
-    announce(['size', 'depth', 'rot', 'offx', 'offy']);
-    announce(['mirror', 'through', 'single', 'homingBump'], 'change');
+    announce(['size', 'depth', 'embossHeight', 'rot', 'offx', 'offy']);
+    announce(['mirror', 'through', 'single', 'emboss', 'homingBump'], 'change');
     scheduleRegen();
   }
 
@@ -644,6 +659,9 @@ export function mount(container, host) {
       mirror: $('mirror').checked,
       through: $('through').checked,
       singleColor: $('single').checked,
+      // Emboss is a property of the CAP (raised vs carved legend), read live like through/single.
+      emboss: $('emboss').checked,
+      embossHeight: C.embossHeight.get(),
       homingBump: $('homingBump').checked,
       homingBumpGeom: homingBumpGeometry,
     };
@@ -669,6 +687,8 @@ export function mount(container, host) {
       mirror: $('mirror').checked,
       through: $('through').checked,
       singleColor: $('single').checked,
+      emboss: $('emboss').checked,
+      embossHeight: C.embossHeight.get(),
       homingBump: false,
       homingBumpGeom: null,
     };
@@ -771,6 +791,9 @@ export function mount(container, host) {
         setStatus(`Ready · ${word} ${sizes}. Note: top is curved (${surfaceVariation.toFixed(1)} mm). Keep it small so it stays flush.`, 'warn');
       } else if ($('through').checked) {
         setStatus(`Ready · ${word} ${sizes} · shine-through: legend + stem print in the legend filament (use transparent to light up).`);
+      } else if ($('emboss').checked) {
+        const one = $('single').checked ? 'one filament (tactile bump)' : 'a second filament';
+        setStatus(`Ready · ${word} ${sizes} · embossed ${oneOpts.embossHeight} mm proud, fused ≥1 layer into the cap, prints in ${one}.`);
       } else if ($('single').checked) {
         setStatus(`Ready · ${word} ${sizes} · single colour: legend engraved ${oneOpts.depth} mm deep, prints in one filament.`);
       } else {
@@ -2046,12 +2069,14 @@ export function mount(container, host) {
           fontId: $('fontSelect').value,
           opts: {
             depth: C.depth.get(),
+            embossHeight: C.embossHeight.get(),
             rotationDeg: C.rot.get(),
             offsetX: C.offx.get(),
             offsetY: C.offy.get(),
             mirror: $('mirror').checked,
             through: $('through').checked,
             singleColor: $('single').checked,
+            emboss: $('emboss').checked,
             // The bump is a Cherry-shaped mesh positioned against the Standard dish; a profile
             // that says it has none keeps its F and J plain.
             homingBumpAllowed: currentProfile?.homingBump !== false && !!homingBumpGeometry,
@@ -2155,6 +2180,7 @@ export function mount(container, host) {
     const projectState = {
       size: parseFloat($('size').value),
       depth: parseFloat($('depth').value),
+      embossHeight: parseFloat($('embossHeight').value),
       rot: parseFloat($('rot').value),
       offx: parseFloat($('offx').value),
       offy: parseFloat($('offy').value),
@@ -2164,6 +2190,7 @@ export function mount(container, host) {
       homingBump: $('homingBump').checked,
       through: $('through').checked,
       single: $('single').checked,
+      emboss: $('emboss').checked,
       profile: $('profileSelect').value,
       unit: $('unitSelect').value,
     };
@@ -2331,6 +2358,7 @@ export function mount(container, host) {
     if (!loaded || typeof loaded !== 'object') throw new Error('Not a keycap project');
     if (loaded.size != null) { $('size').value = loaded.size; $('sizeNum').value = loaded.size; }
     if (loaded.depth != null) { $('depth').value = loaded.depth; $('depthNum').value = loaded.depth; }
+    if (loaded.embossHeight != null) { $('embossHeight').value = loaded.embossHeight; $('embossHeightNum').value = loaded.embossHeight; }
     if (loaded.rot != null) { $('rot').value = loaded.rot; $('rotNum').value = loaded.rot; }
     if (loaded.offx != null) { $('offx').value = loaded.offx; $('offxNum').value = loaded.offx; }
     if (loaded.offy != null) { $('offy').value = loaded.offy; $('offyNum').value = loaded.offy; }
@@ -2340,6 +2368,7 @@ export function mount(container, host) {
     if (loaded.homingBump != null) $('homingBump').checked = loaded.homingBump;
     if (loaded.through != null) $('through').checked = loaded.through;
     if (loaded.single != null) $('single').checked = loaded.single;
+    if (loaded.emboss != null) $('emboss').checked = loaded.emboss;
     if (loaded.profile) $('profileSelect').value = loaded.profile;
     if (loaded.unit) $('unitSelect').value = loaded.unit;
     if (loaded.keyboardSet) keyboardSet = loaded.keyboardSet;

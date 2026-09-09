@@ -6,6 +6,13 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
+// How far an embossed (raised) legend reaches BELOW the cap surface, so it fuses into the cap
+// as one solid instead of two shells meeting at a single plane (which delaminates on a print).
+// 0.4 mm = two 0.2 mm layers — comfortably above the "at least one layer embedded" floor, and a
+// one-line knob if that ever needs tuning. The lowest sampled surface point sets the reference,
+// so every part of the legend is embedded by at least this much.
+const LEGEND_EMBED_MM = 0.4;
+
 // Centre the SVG, scale the longer side to widthMM, flip SVG-Y, rotate, then position.
 function transformContours(contours, box, { widthMM, centerX, centerY, rotationDeg, mirror }) {
   const cx = (box.min.x + box.max.x) / 2;
@@ -111,8 +118,18 @@ export async function buildBodies(capGeom, meta, icon, opts) {
   // shell so the legend punches clean through the top wall into the cavity — a light pipe in
   // transparent filament. With the stem gone there's no central material to leave ribbons on.
   const capBottomZ = meta.bbox.min[2];
-  const bottomZ = opts.through ? capBottomZ - 1 : lo - opts.depth;
-  const height  = meta.topZ + 3 - bottomZ;
+  let bottomZ, height;
+  if (opts.emboss) {
+    // Emboss (raised legend): start one embed-depth BELOW the lowest surface under the legend so
+    // the prism overlaps the cap and fuses into it, and rise to a flat top embossHeight above the
+    // HIGHEST surface point so the whole legend clears the dished top by at least embossHeight.
+    bottomZ = lo - LEGEND_EMBED_MM;
+    height  = (hi + opts.embossHeight) - bottomZ;
+  } else {
+    // Deboss / shine-through: extrude from below the surface (or the whole shell) up past the top.
+    bottomZ = opts.through ? capBottomZ - 1 : lo - opts.depth;
+    height  = meta.topZ + 3 - bottomZ;
+  }
 
   let cap = geomToManifold(capGeom);
 
@@ -151,14 +168,32 @@ export async function buildBodies(capGeom, meta, icon, opts) {
 
   if (!prism) throw new Error('No geometry to extrude for this icon.');
 
-  // Single-colour mode: only carve the recess (cap − prism) and skip the separate legend
-  // body, so the whole cap prints in one filament with the icon engraved into the top.
-  const logoM  = opts.singleColor ? null : cap.intersect(prism);
-  const bodyM  = cap.subtract(prism);
+  let logoM, bodyM;
+  if (opts.emboss) {
+    if (opts.singleColor) {
+      // One filament: fuse the raised legend into the cap → a single tactile solid.
+      bodyM = cap.add(prism);
+      logoM = null;
+    } else {
+      // Two filaments: the legend is its own raised body plugged into a matching notch in the cap.
+      // The two tile with no overlapping material, and the notch anchors the legend ≥ one layer
+      // deep. `prism` doubles as the legend body here — guard the cleanup against a double free.
+      bodyM = cap.subtract(prism);
+      logoM = prism;
+    }
+  } else {
+    // Single-colour deboss: carve the recess (cap − prism) only, skipping the separate legend body
+    // so the whole cap prints in one filament with the icon engraved into the top.
+    logoM = opts.singleColor ? null : cap.intersect(prism);
+    bodyM = cap.subtract(prism);
+  }
 
   const logoGeometry    = logoM ? manifoldToGeom(logoM) : null;
   const keycapGeometry  = manifoldToGeom(bodyM);
 
-  cap.delete(); prism.delete(); logoM?.delete(); bodyM.delete();
+  cap.delete();
+  if (logoM !== prism) prism.delete();
+  logoM?.delete();
+  bodyM.delete();
   return { keycapGeometry, logoGeometry, surfaceVariation: hi - lo };
 }

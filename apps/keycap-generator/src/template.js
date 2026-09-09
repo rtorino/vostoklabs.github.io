@@ -76,6 +76,14 @@ export const TEMPLATE = `
           <input id="depthNum" type="number" step="0.05" />
           <span class="unit">mm</span>
         </div>
+        <!-- Emboss height. Only bites when "Embossed legend" is on (applyModeFlags disables it
+             otherwise), sitting next to Depth as its raised-legend counterpart. -->
+        <div class="prow">
+          <label for="embossHeight">Emboss height</label>
+          <input id="embossHeight" type="range" min="0.2" max="3" step="0.05" value="1" />
+          <input id="embossHeightNum" type="number" step="0.05" />
+          <span class="unit">mm</span>
+        </div>
         <!-- Mode-specific controls belonging to this section (see #kcModeTabs). -->
         <div id="kcPlacementExtra"></div>
         <div class="prow">
@@ -134,6 +142,12 @@ export const TEMPLATE = `
         <div class="switch-row" id="homingBumpRow">
           <span class="switch-label">Homing bump</span>
           <label class="toggle"><input id="homingBump" type="checkbox" /><span class="slider"></span></label>
+        </div>
+        <div class="switch-block">
+          <div class="switch-row">
+            <span class="switch-label">Embossed (raised) legend<button class="help-badge" type="button" aria-label="What does embossed legend do?" data-tip="Raises the legend ABOVE the cap surface instead of carving it in. It is fused at least one layer into the cap so it can't peel. Set the raised height with Emboss height. Prints as a second colour, or one colour for a tactile bump. Turns off shine through.">?</button></span>
+            <label class="toggle"><input id="emboss" type="checkbox" /><span class="slider"></span></label>
+          </div>
         </div>
         <div class="switch-block" id="shineThroughRow">
           <div class="switch-row">
