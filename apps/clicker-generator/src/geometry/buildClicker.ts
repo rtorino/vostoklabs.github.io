@@ -107,23 +107,6 @@ export function buildClicker(
   /** Half-extent of the switch pocket in XY — the radius inside which nothing can be buried. */
   const sbbHalf = Math.max(socketBB.max[0], socketBB.max[1], -socketBB.min[0], -socketBB.min[1]);
 
-  /* Smallest radius at which a void of diameter `d` sits entirely outside the switch pocket,
-     along the bearing `thetaRad`.
-     
-     The pocket is a SQUARE, so its boundary is further from the centre off-axis than on it —
-     `sbbHalf / max(|cos|, |sin|)`, which is `sbbHalf` on an axis and `sbbHalf * sqrt(2)` at 45°.
-     Using the bare half-extent instead (the first attempt at this) under-clears every void that
-     is not on an axis: the one at 201.9° needs 9.03 mm and a flat clamp gave it 8.57, so it went
-     on failing exactly as before and the fix looked like it had done nothing.
-     
-     `socketBB` is the real asset's bounds, so this follows the CAD rather than a constant that
-     would rot the moment the socket is re-cut. The 0.15 mm is margin, not clearance: the void
-     must be BURIED, and a sphere merely tangent to the cavity fails the 0.98 volume test. */
-  const voidClearR = (d: number, thetaRad: number): number => {
-    const c = Math.abs(Math.cos(thetaRad));
-    const sn = Math.abs(Math.sin(thetaRad));
-    return sbbHalf / Math.max(c, sn, 1e-6) + d / 2 + 0.15;
-  };
   const stemBB = stem.boundingBox();
   const socketDim = Math.max(
     socketBB.max[0] - socketBB.min[0],
@@ -1253,34 +1236,18 @@ export function buildClicker(
         out against it on every click; that column is the load path and hollowing it is how a
         clicker fails after a week rather than in the slicer.
       - The keychain lobe, which is welded on further down and needs material to weld to.
-      - The band the identity voids occupy. `voidClearR` already pushes them outboard of the
-        pocket, so the inset alone does not protect them - the cavity's OUTER edge has to stay
-        inboard of them too, which is what `voidBandInner` below is for.
-
-     Done BEFORE the void loops so their buried test sees the final shape: a cavity that would
-     swallow a void makes the counter report it instead of erasing it silently. */
+      - The base FLOOR under the socket, where the identity voids now live. The covert mark was
+        moved out of the switch ring into the base slab, so the cavity never touches it: the floor
+        (bodyBottomZ..cavityBottomZ) stays solid and the voids bury there whatever the collar does. */
+  // Original thickness: 4 perimeters of wall (1.77 mm at a 0.4 mm nozzle) and a 1.25 mm base —
+  // the values the filament-saving hollow shipped with. The collar is one wall thick around each
+  // socket. Declared at function scope so the base-slab mark below can size its floor to match.
+  const HOLLOW_WALL = 1.77;
+  const HOLLOW_FLOOR = 1.25;
   if (params.hollowBase) {
-    // 1.6 mm of wall and floor. CLAUDE.md's printability numbers put the minimum at 1.2 mm and
-    // 1.5 mm for parts that get handled; a clicker is handled constantly, so this is the floor
-    // of the range and not the middle of it.
-    const WALL = 1.6;
-    const FLOOR = 1.6;
-    /* Keep the cavity OUTBOARD of the identity voids.
-       
-       The first cut of this had it the other way round — cavity inside the void band, switch
-       column punched out — and removed exactly nothing, because the two regions do not overlap:
-       the voids sit just outside the pocket (r about 9-11), and the pocket keep-out reaches
-       8.97, so "inside the voids AND outside the pocket" is an empty annulus. The solid part of
-       a clicker is its CENTRE — the switch column and the void ring around it — and the material
-       worth removing is the plate outside all of that. */
-    const voidBandOuter = Math.max(
-      ...[...markVoids(getMarkSeed() || 'x'), ...hardcodedVoids()].map(
-        (v) => Math.max(v.r, voidClearR(v.d, (v.thetaDeg * Math.PI) / 180)) + v.d / 2 + 0.3,
-      ),
-    );
-    // No lid: the ceiling IS the well floor, so the two voids are one.
+    // No lid: the ceiling IS the well floor, so the cavity opens up into the well as one void.
     const cavityTopZ = wellFloorZ;
-    const cavityBottomZ = bodyBottomZ + FLOOR;
+    const cavityBottomZ = bodyBottomZ + HOLLOW_FLOOR;
     if (cavityTopZ - cavityBottomZ > 0.6) {
       /* The well's own footprint, clamped to leave at least WALL of shell.
 
@@ -1294,14 +1261,23 @@ export function buildClicker(
          Measured rim-to-rim at cap 60: without the clamp, borderWidth 0.4 gives a 0.4 mm
          wall; with it, never below 1.6. */
       let cavityFp: Section = track(
-        wellFootprint.intersect(shrink(bodyFootprint, WALL, bodyFootprint)),
+        wellFootprint.intersect(shrink(bodyFootprint, HOLLOW_WALL, bodyFootprint)),
       );
-      // One solid column per switch, wide enough to carry the socket, the load path under it and
-      // the whole void ring. Whichever of those reaches furthest sets the radius.
-      const columnR = Math.max(sbbHalf + 1.2, voidBandOuter);
+      // A thin square COLLAR that hugs each switch socket — one wall's worth of material to grip
+      // the switch and carry the click load; everything beyond it hollows away. The collar is a
+      // rounded square (half-extent = socket half + one wall) rotated with the switch, so it reads
+      // as the square the socket is. The covert mark lives in the base slab BELOW the cavity floor,
+      // so no switch needs a fat void-ring column any more — this is the "square perimeter of the
+      // switch" the original hollow used.
+      const collarHalf = sbbHalf + HOLLOW_WALL;
+      const collarFillet = Math.min(1.5, sbbHalf * 0.25);
+      const collarBase = roundedRect(2 * collarHalf, 2 * collarHalf, collarFillet);
       for (const sw of applied) {
-        const keepOut = track(track(CrossSection.circle(columnR, 64)).translate([sw.x, sw.y]));
-        cavityFp = track(cavityFp.subtract(keepOut));
+        const collar = track(
+          (Math.abs(sw.rotation) > 0.001 ? track(collarBase.rotate(sw.rotation)) : collarBase)
+            .translate([sw.x, sw.y]),
+        );
+        cavityFp = track(cavityFp.subtract(collar));
       }
       if (!sectionIsEmpty(cavityFp)) {
         /* 0.004, not the default 0.04 — the same number and the same reason as `wellFootprint`
@@ -1329,65 +1305,44 @@ export function buildClicker(
   let marksLanded = 0;
 
 
-  // Covert identity mark: subtract a seeded void constellation anchored to switch #0's
-  // socket, buried in the always-solid ring (invisible on prints, visible in a slicer
-  // section view). Only active when VITE_MARK_SEED is set (deployed build); dev builds
-  // skip this tier. Each void is subtracted only if fully buried, so it can never pierce
-  // a surface regardless of design/size/switch offset.
-  const markSeed = getMarkSeed();
-  if (markSeed && applied.length > 0) {
-    const sw0 = applied[0];
-    const rot0 = ((sw0.rotation ?? 0) * Math.PI) / 180;
-    for (const v of markVoids(markSeed)) {
-      const ang = (v.thetaDeg * Math.PI) / 180 + rot0;
-      // Push out only if the authored radius could not clear the pocket. A void that already
-      // clears keeps its exact position, so models generated before this still match.
-      const vr = Math.max(v.r, voidClearR(v.d, (v.thetaDeg * Math.PI) / 180));
-      const cx = sw0.x + vr * Math.cos(ang);
-      const cy = sw0.y + vr * Math.sin(ang);
-      const sphere = track(track(Manifold.sphere(v.d / 2, 16)).translate([cx, cy, v.z]));
-      let buried = false;
-      try {
-        const inter = track(body.intersect(sphere));
-        buried = inter.volume() >= sphere.volume() * 0.98;
-      } catch {
-        buried = false;
-      }
-      marksAttempted += 1;
-      if (buried) {
-        body = track(body.subtract(sphere));
-        marksLanded += 1;
-      }
-    }
-  }
-
-  // Hardcoded watermark — always active, no secret needed. A second tier of identity
-  // voids at a different radius/depth band (r 8–10, z -3.5...-1.5) so they never
-  // overlap with the secret constellation above. Even if someone copies the source
-  // and runs it without VITE_MARK_SEED, every model still carries these voids as
-  // proof that it was generated by this codebase.
+  // Covert identity mark: a constellation of tiny voids buried in the ALWAYS-SOLID BASE SLAB
+  // under switch #0 — invisible on prints and normal previews, demonstrable in a slicer's
+  // horizontal layer/section view. Relocated out of the switch ring into the base so hollowing
+  // the body (cavity + tight collar) can never unbury it: the floor bodyBottomZ..markFloorTopZ
+  // stays solid. Placed at the base mid-plane with each diameter clamped to the floor thickness,
+  // so it survives any wall/base setting. Hardcoded tier always on; seeded tier only on the
+  // deployed build (VITE_MARK_SEED). Each sphere is subtracted only if fully buried, and counted,
+  // so a body too thin to hold the mark reports the loss instead of shipping it silently.
   if (applied.length > 0) {
     const sw0 = applied[0];
     const rot0 = ((sw0.rotation ?? 0) * Math.PI) / 180;
-    for (const v of hardcodedVoids()) {
-      const ang = (v.thetaDeg * Math.PI) / 180 + rot0;
-      // Push out only if the authored radius could not clear the pocket. A void that already
-      // clears keeps its exact position, so models generated before this still match.
-      const vr = Math.max(v.r, voidClearR(v.d, (v.thetaDeg * Math.PI) / 180));
-      const cx = sw0.x + vr * Math.cos(ang);
-      const cy = sw0.y + vr * Math.sin(ang);
-      const sphere = track(track(Manifold.sphere(v.d / 2, 16)).translate([cx, cy, v.z]));
-      let buried = false;
-      try {
-        const inter = track(body.intersect(sphere));
-        buried = inter.volume() >= sphere.volume() * 0.98;
-      } catch {
-        buried = false;
-      }
-      marksAttempted += 1;
-      if (buried) {
-        body = track(body.subtract(sphere));
-        marksLanded += 1;
+    // Solid floor under BOTH the cavity (when hollowed) and the socket = the room the mark hides
+    // in. Centre the voids in it and cap their diameter to fit.
+    const markFloorTopZ = params.hollowBase
+      ? Math.min(bodyBottomZ + HOLLOW_FLOOR, socketBB.min[2])
+      : socketBB.min[2];
+    const availBase = markFloorTopZ - bodyBottomZ;
+    if (availBase > 0.6) {
+      const markZ = bodyBottomZ + availBase / 2;
+      const maxMarkD = Math.max(0.3, availBase * 0.6);
+      for (const v of [...hardcodedVoids(), ...markVoids(getMarkSeed())]) {
+        const ang = (v.thetaDeg * Math.PI) / 180 + rot0;
+        const cx = sw0.x + v.r * Math.cos(ang);
+        const cy = sw0.y + v.r * Math.sin(ang);
+        const d = Math.min(v.d, maxMarkD);
+        const sphere = track(track(Manifold.sphere(d / 2, 16)).translate([cx, cy, markZ]));
+        let buried = false;
+        try {
+          const inter = track(body.intersect(sphere));
+          buried = inter.volume() >= sphere.volume() * 0.98;
+        } catch {
+          buried = false;
+        }
+        marksAttempted += 1;
+        if (buried) {
+          body = track(body.subtract(sphere));
+          marksLanded += 1;
+        }
       }
     }
   }

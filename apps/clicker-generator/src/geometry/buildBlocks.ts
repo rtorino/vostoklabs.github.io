@@ -803,15 +803,21 @@ export function buildBlocks(
    *  printed part, so each one carries the mark). */
   function applyIdentityVoids(block: Solid): Solid {
     let out = block;
-    const seed = getMarkSeed();
-    const all = [...(seed ? markVoids(seed) : []), ...hardcodedVoids()];
+    const all = [...hardcodedVoids(), ...markVoids(getMarkSeed())];
+    // The mark now carries only polar r+angle (see identityMark.ts): bury the voids just above the
+    // block's bottom face in its ALWAYS-SOLID base slab, clamping each diameter to the room there.
+    // Subtract only when fully buried, so a void can never break a surface.
+    const bb = block.boundingBox();
+    const maxMarkD = Math.max(0.3, (bb.max[2] - bb.min[2]) * 0.2);
+    const markZ = bb.min[2] + maxMarkD / 2 + 0.1;
     for (const v of all) {
       const ang = (v.thetaDeg * Math.PI) / 180;
+      const d = Math.min(v.d, maxMarkD);
       const sphere = track(
-        track(Manifold.sphere(v.d / 2, 16)).translate([
+        track(Manifold.sphere(d / 2, 16)).translate([
           v.r * Math.cos(ang),
           v.r * Math.sin(ang),
-          v.z,
+          markZ,
         ]),
       );
       try {

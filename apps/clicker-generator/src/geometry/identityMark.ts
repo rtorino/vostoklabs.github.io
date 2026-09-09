@@ -1,24 +1,26 @@
 // Covert model-identity mark. A deterministic constellation of tiny voids buried in
-// the always-solid ring around switch #0's socket — invisible on prints and normal
-// previews, but demonstrable in any slicer's section/layer view. The constellation is
+// the ALWAYS-SOLID BASE SLAB under the body — invisible on prints and normal previews,
+// but demonstrable in any slicer's horizontal layer/section view. The constellation is
 // derived from a build-time secret (VITE_MARK_SEED, a GitHub Actions secret), so the
 // mechanism can be public while the actual signature stays private and provable.
 //
-// Dev builds (no seed) add NO voids, so local geometry is identical to pre-feature
-// builds; the deployed site always marks. See "New features dev plan" §3.3.
+// (2026-07-30) Relocated from a solid ring around the switch into the base slab, so the
+// body can be hollowed for filament savings without ever unburying the mark. Voids are
+// authored in the base PLANE (polar r + angle only); the builder places them at the
+// base mid-plane and clamps each diameter to the current base thickness, so the mark
+// survives any user-set wall/base thickness. Dev builds (no seed) still add the
+// hardcoded tier only; the deployed site adds both.
 
 export interface MarkVoid {
-  /** Polar radius from the socket centre, mm. */
+  /** Polar radius from switch #0's centre, mm (kept small so it stays inside the base). */
   r: number;
   /** Polar angle, degrees (rotated with the switch at build time). */
   thetaDeg: number;
-  /** Z depth in the build frame, mm (inside the body wall below the well floor). */
-  z: number;
-  /** Void sphere diameter, mm. */
+  /** Nominal void sphere diameter, mm (the builder clamps this to the base thickness). */
   d: number;
 }
 
-/** Read the build-time secret. Empty (dev / node test) → marking disabled. */
+/** Read the build-time secret. Empty (dev / node test) → secret tier disabled. */
 export function getMarkSeed(): string {
   try {
     return (((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_MARK_SEED) as string) ?? '';
@@ -69,7 +71,7 @@ function angularGap(a: number, b: number): number {
 
 /** Deterministic 5-void constellation for a seed. Same seed → same voids forever, so
  *  every model from the public site shares one fingerprint ("made by my generator").
- *  Radii/angles/depths stay inside the always-solid socket ring; angles ≥ 25° apart. */
+ *  Radii stay in the 8.0–10.5 mm base ring; angles ≥ 25° apart. */
 export function markVoids(seed: string): MarkVoid[] {
   if (!seed) return [];
   const rng = makePrng(seed);
@@ -81,25 +83,23 @@ export function markVoids(seed: string): MarkVoid[] {
     if (angles.some((a) => angularGap(a, theta) < 25)) continue;
     angles.push(theta);
     voids.push({
-      r: 10.5 + rng() * 2.0, // 10.5..12.5 mm (outside the 14 mm socket + wall)
+      r: 8.0 + rng() * 2.5, // 8.0..10.5 mm — outer base ring
       thetaDeg: theta,
-      z: -4.5 + rng() * 2.0, // -4.5..-2.5 mm (below the well floor, above the body bottom)
-      d: 1.2 + rng() * 0.4, // 1.2..1.6 mm
+      d: 0.7 + rng() * 0.2, // 0.7..0.9 mm (builder clamps to base thickness)
     });
   }
   return voids;
 }
 
 // ---------------------------------------------------------------------------
-// Hardcoded watermark — always active, no secret required.
-// Uses a DIFFERENT radius/depth band (r 8.0–10.0, z -3.5...-1.5, d 1.0–1.4)
-// so the two tiers never overlap. Even if someone copies the source and runs it
-// without VITE_MARK_SEED, every model still carries these identity voids.
+// Hardcoded watermark — always active, no secret required. A DIFFERENT (inner)
+// radius band from the secret tier so the two never overlap. Even if someone copies
+// the source and runs it without VITE_MARK_SEED, every model still carries these voids.
 // ---------------------------------------------------------------------------
 const HARDCODED_SEED = 'vostok-labs-clicker-generator-2026';
 
-/** 4 hardcoded voids that are ALWAYS subtracted from the body — no build-time
- *  secret needed. Proves the model was built by this generator's code. */
+/** 4 hardcoded voids ALWAYS subtracted from the base — no build-time secret needed.
+ *  Proves the model was built by this generator's code. Radii 5.0–7.0 mm. */
 export function hardcodedVoids(): MarkVoid[] {
   const rng = makePrng(HARDCODED_SEED);
   const voids: MarkVoid[] = [];
@@ -110,10 +110,9 @@ export function hardcodedVoids(): MarkVoid[] {
     if (angles.some((a) => angularGap(a, theta) < 30)) continue;
     angles.push(theta);
     voids.push({
-      r: 8.0 + rng() * 2.0,  // 8.0..10.0 mm — inside the secret mark's 10.5+ band
+      r: 5.0 + rng() * 2.0, // 5.0..7.0 mm — inner base ring (inside the secret band)
       thetaDeg: theta,
-      z: -3.5 + rng() * 2.0,  // -3.5..-1.5 mm — shallower than the secret band
-      d: 1.0 + rng() * 0.4,   // 1.0..1.4 mm — slightly smaller
+      d: 0.6 + rng() * 0.2, // 0.6..0.8 mm (builder clamps to base thickness)
     });
   }
   return voids;
