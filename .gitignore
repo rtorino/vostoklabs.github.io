@@ -124,3 +124,6 @@ apps/foldbox/README.internal.md
 # Bambu Studio CLI slicing output, dropped in the repo root by whatever ran last.
 result.json
 
+
+# Vercel
+.vercel

@@ -30,4 +30,13 @@ copy('apps/keycap-generator/dist', 'apps/hub/dist/keycap');
 run('pnpm build:magnet');
 copy('apps/magnet-generator/dist', 'apps/hub/dist/magnet');
 
+run('pnpm build:housenumber');
+copy('apps/house-number/dist', 'apps/hub/dist/house-number');
+
+run('pnpm build:penTopper');
+copy('apps/pen-topper/dist', 'apps/hub/dist/pen-topper');
+
+run('pnpm build:foldbox');
+copy('apps/foldbox/dist', 'apps/hub/dist/foldbox');
+
 console.log('\n✓ Assembled site → apps/hub/dist');
